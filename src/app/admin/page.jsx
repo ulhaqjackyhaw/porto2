@@ -1341,7 +1341,7 @@ export default function AdminDashboard() {
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6">
               <h2 className="text-xl font-bold text-white mb-2">Teks Ajakan Kolaborasi</h2>
               <p className="text-sm text-zinc-400 mb-6">
-                Ubah judul dan kalimat ajakan pada section "Contact me for collaboration".
+                Ubah judul dan kalimat ajakan pada section &quot;Contact me for collaboration&quot;.
               </p>
 
               <form onSubmit={handleSaveCollab} className="space-y-4">
