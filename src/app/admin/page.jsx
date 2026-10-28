@@ -3,13 +3,25 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ImageCropModal from '@/components/ImageCropModal';
 
 export default function AdminDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('hero');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // Image Cropper Modal State
+  const [cropModal, setCropModal] = useState({
+    open: false,
+    imageSrc: '',
+    fileName: '',
+    defaultAspect: 16 / 9,
+    title: 'Potong & Sesuaikan Gambar',
+    onCropAndUpload: null,
+  });
 
   // Data states
   const [hero, setHero] = useState({
@@ -119,15 +131,15 @@ export default function AdminDashboard() {
     router.push('/login');
   };
 
-  // Upload helper
-  const handleFileUpload = async (e, onUploaded) => {
-    const file = e.target.files?.[0];
+  // Upload helper for generic files (like PDF / CV)
+  const uploadDirectFile = async (file, onUploaded) => {
     if (!file) return;
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
+      setUploadingImage(true);
       showToast('Mengunggah file...', 'info');
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -140,7 +152,44 @@ export default function AdminDashboard() {
       showToast(`Berhasil upload: ${file.name}`);
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setUploadingImage(false);
     }
+  };
+
+  const handleFileUpload = async (e, onUploaded) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadDirectFile(file, onUploaded);
+  };
+
+  // Helper when selecting image to open the crop modal
+  const handleSelectImageForCrop = (e, { defaultAspect = 16 / 9, title = 'Potong Gambar', onUploaded }) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Mohon pilih file gambar yang valid (JPG, PNG, WEBP)', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropModal({
+        open: true,
+        imageSrc: reader.result,
+        fileName: file.name,
+        defaultAspect,
+        title,
+        onCropAndUpload: async (croppedBlob, croppedFile) => {
+          await uploadDirectFile(croppedFile, onUploaded);
+        },
+      });
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input value to allow selecting same file again
+    e.target.value = '';
   };
 
   // 1. Hero save
@@ -478,7 +527,7 @@ export default function AdminDashboard() {
                       <input
                         type="file"
                         accept=".pdf,.doc,.docx"
-                        onChange={(e) => handleFileUpload(e, (url) => setHero({ ...hero, cv_url: url }))}
+                        onChange={(e) => uploadDirectFile(e.target.files?.[0], (url) => setHero((prev) => ({ ...prev, cv_url: url })))}
                         className="w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
                       />
                     </div>
@@ -583,33 +632,43 @@ export default function AdminDashboard() {
                   </h3>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     <div className="w-24 h-28 rounded-2xl bg-zinc-800 border border-zinc-700 overflow-hidden shrink-0 flex items-center justify-center bg-gradient-to-t from-sky-400/30 to-zinc-800">
-                      {hero.banner_img ? (
-                        <img src={hero.banner_img} alt="Preview Foto" className="w-full h-full object-cover" />
-                      ) : (
-                        <img src="/images/Ulhaq.png" alt="Preview Foto" className="w-full h-full object-cover" />
-                      )}
+                      <img
+                        src={hero.banner_img || '/images/Ulhaq.png'}
+                        alt="Preview Foto"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/images/Ulhaq.png';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                     <div className="flex-1 w-full space-y-2">
                       <label className="block text-xs font-medium text-zinc-300">
-                        Upload Foto Baru (PNG, JPG, WEBP)
+                        Upload & Potong Foto Baru (Disarankan Rasio 1:1 atau Bebas)
                       </label>
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => handleFileUpload(e, (url) => setHero({ ...hero, banner_img: url }))}
+                        onChange={(e) =>
+                          handleSelectImageForCrop(e, {
+                            defaultAspect: 1,
+                            title: 'Potong & Sesuaikan Foto Profil / Banner (1:1 / Bebas)',
+                            onUploaded: (url) => setHero((prev) => ({ ...prev, banner_img: url })),
+                          })
+                        }
                         className="w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
                       />
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
                           value={hero.banner_img || ''}
-                          onChange={(e) => setHero({ ...hero, banner_img: e.target.value })}
+                          onChange={(e) => setHero((prev) => ({ ...prev, banner_img: e.target.value }))}
                           placeholder="/images/Ulhaq.png atau /uploads/..."
                           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs font-mono"
                         />
                         <button
                           type="button"
-                          onClick={() => setHero({ ...hero, banner_img: '/images/Ulhaq.png' })}
+                          onClick={() => setHero((prev) => ({ ...prev, banner_img: '/images/Ulhaq.png' }))}
                           className="px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white bg-zinc-800 border border-zinc-700 rounded-lg whitespace-nowrap"
                         >
                           Reset Default
@@ -714,7 +773,15 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-lg bg-zinc-800/80 p-2 flex items-center justify-center shrink-0 border border-zinc-700/50">
                         {item.img_src ? (
-                          <img src={item.img_src} alt={item.label} className="w-full h-full object-contain" />
+                          <img
+                            src={item.img_src}
+                            alt={item.label}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = '/images/logo.svg';
+                            }}
+                            className="w-full h-full object-contain"
+                          />
                         ) : (
                           <span className="text-xs text-zinc-500">Logo</span>
                         )}
@@ -838,12 +905,20 @@ export default function AdminDashboard() {
                     {/* Logo upload & preview */}
                     <div>
                       <label className="block text-xs font-medium text-zinc-300 mb-1">
-                        Logo Icon (Upload Gambar atau Masukkan URL/Path)
+                        Logo Icon (Upload & Potong Gambar atau Masukkan URL/Path)
                       </label>
                       <div className="flex items-center gap-3 mb-2">
                         <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 p-2 flex items-center justify-center shrink-0">
                           {techForm.img_src ? (
-                            <img src={techForm.img_src} alt="Preview" className="w-full h-full object-contain" />
+                            <img
+                              src={techForm.img_src}
+                              alt="Preview"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/images/logo.svg';
+                              }}
+                              className="w-full h-full object-contain"
+                            />
                           ) : (
                             <span className="text-[10px] text-zinc-500">Preview</span>
                           )}
@@ -851,7 +926,13 @@ export default function AdminDashboard() {
                         <input
                           type="file"
                           accept="image/*,.svg"
-                          onChange={(e) => handleFileUpload(e, (url) => setTechForm({ ...techForm, img_src: url }))}
+                          onChange={(e) =>
+                            handleSelectImageForCrop(e, {
+                              defaultAspect: 1,
+                              title: 'Potong & Sesuaikan Logo Tech Stack (1:1 / Persegi)',
+                              onUploaded: (url) => setTechForm((prev) => ({ ...prev, img_src: url })),
+                            })
+                          }
                           className="w-full text-xs text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
                         />
                       </div>
@@ -859,7 +940,7 @@ export default function AdminDashboard() {
                         type="text"
                         required
                         value={techForm.img_src}
-                        onChange={(e) => setTechForm({ ...techForm, img_src: e.target.value })}
+                        onChange={(e) => setTechForm((prev) => ({ ...prev, img_src: e.target.value }))}
                         placeholder="/images/flutter.svg atau /uploads/... atau https://..."
                         className="w-full px-3.5 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-white text-xs font-mono"
                       />
@@ -950,6 +1031,10 @@ export default function AdminDashboard() {
                       <img
                         src={proj.img_src}
                         alt={proj.title}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/images/projects/project1.png';
+                        }}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     ) : (
@@ -1087,30 +1172,69 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Image upload */}
+                    {/* Image upload with crop */}
                     <div>
-                      <label className="block text-xs font-medium text-zinc-300 mb-1">
-                        Gambar Tampilan Depan (Upload File Baru atau Input URL)
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleFileUpload(e, (url) => setProjectForm({ ...projectForm, img_src: url }))}
-                        className="w-full mb-2 text-xs text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
-                      />
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-xs font-medium text-zinc-300">
+                          Gambar Cover Project (Upload & Crop Otomatis)
+                        </label>
+                        <span className="text-[11px] text-sky-400 font-medium">Rasio 16:9</span>
+                      </div>
+
+                      <div className="p-3 bg-zinc-800/60 rounded-xl border border-zinc-700/70 space-y-3 mb-2">
+                        {projectForm.img_src ? (
+                          <div className="relative aspect-video w-full rounded-lg bg-zinc-900 border border-zinc-700 overflow-hidden group">
+                            <img
+                              src={projectForm.img_src}
+                              alt="Preview"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/images/projects/project1.png';
+                              }}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <span className="text-xs text-white bg-zinc-900/80 px-2.5 py-1 rounded-md">
+                                Tampilan Cover 16:9
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="aspect-video w-full rounded-lg bg-zinc-900/80 border border-dashed border-zinc-700 flex flex-col items-center justify-center text-zinc-500 gap-1.5 p-4">
+                            <svg className="w-8 h-8 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span className="text-xs">Belum ada gambar cover yang dipilih</span>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">
+                            Pilih file gambar dari komputer (JPG, PNG, WEBP) untuk dipotong & di-crop:
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) =>
+                              handleSelectImageForCrop(e, {
+                                defaultAspect: 16 / 9,
+                                title: 'Potong & Sesuaikan Cover Highlight Project (16:9)',
+                                onUploaded: (url) => setProjectForm((prev) => ({ ...prev, img_src: url })),
+                              })
+                            }
+                            className="w-full text-xs text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
                       <input
                         type="text"
                         required
                         value={projectForm.img_src}
-                        onChange={(e) => setProjectForm({ ...projectForm, img_src: e.target.value })}
+                        onChange={(e) => setProjectForm((prev) => ({ ...prev, img_src: e.target.value }))}
                         placeholder="/images/projects/project1.png atau /uploads/..."
                         className="w-full px-3.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs font-mono"
                       />
-                      {projectForm.img_src && (
-                        <div className="mt-2 w-full h-32 rounded-lg bg-zinc-800 border border-zinc-700 overflow-hidden">
-                          <img src={projectForm.img_src} alt="Preview" className="w-full h-full object-cover" />
-                        </div>
-                      )}
                     </div>
 
                     <div>
@@ -1137,10 +1261,10 @@ export default function AdminDashboard() {
                       </button>
                       <button
                         type="submit"
-                        disabled={saving}
+                        disabled={saving || uploadingImage}
                         className="px-5 py-2 bg-sky-500 hover:bg-sky-400 text-white font-medium text-sm rounded-lg shadow-md shadow-sky-500/20 disabled:opacity-50"
                       >
-                        {saving ? 'Menyimpan...' : 'Simpan Project'}
+                        {saving ? 'Menyimpan...' : uploadingImage ? 'Mengunggah...' : 'Simpan Project'}
                       </button>
                     </div>
                   </form>
@@ -1190,6 +1314,10 @@ export default function AdminDashboard() {
                       <img
                         src={cert.img_src}
                         alt={cert.title}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/images/certificates/1.png';
+                        }}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -1278,21 +1406,66 @@ export default function AdminDashboard() {
                       />
                     </div>
 
+                    {/* Image upload with crop */}
                     <div>
-                      <label className="block text-xs font-medium text-zinc-300 mb-1">
-                        Gambar Sertifikat (Upload File Baru atau Input URL)
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleFileUpload(e, (url) => setCertForm({ ...certForm, img_src: url }))}
-                        className="w-full mb-2 text-xs text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
-                      />
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-xs font-medium text-zinc-300">
+                          Gambar Sertifikat (Upload & Crop Otomatis)
+                        </label>
+                        <span className="text-[11px] text-sky-400 font-medium">Rasio 16:10 / 4:3</span>
+                      </div>
+
+                      <div className="p-3 bg-zinc-800/60 rounded-xl border border-zinc-700/70 space-y-3 mb-2">
+                        {certForm.img_src ? (
+                          <div className="relative aspect-[16/10] w-full rounded-lg bg-zinc-900 border border-zinc-700 overflow-hidden group">
+                            <img
+                              src={certForm.img_src}
+                              alt="Preview Sertifikat"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/images/certificates/1.png';
+                              }}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <span className="text-xs text-white bg-zinc-900/80 px-2.5 py-1 rounded-md">
+                                Tampilan Sertifikat 16:10
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="aspect-[16/10] w-full rounded-lg bg-zinc-900/80 border border-dashed border-zinc-700 flex flex-col items-center justify-center text-zinc-500 gap-1.5 p-4">
+                            <svg className="w-8 h-8 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                            </svg>
+                            <span className="text-xs">Belum ada gambar sertifikat yang dipilih</span>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">
+                            Pilih file sertifikat (JPG, PNG, WEBP) untuk dipotong & di-crop:
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) =>
+                              handleSelectImageForCrop(e, {
+                                defaultAspect: 16 / 10,
+                                title: 'Potong & Sesuaikan Gambar Sertifikat (16:10 / 4:3)',
+                                onUploaded: (url) => setCertForm((prev) => ({ ...prev, img_src: url })),
+                              })
+                            }
+                            className="w-full text-xs text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-500/20 file:text-sky-300 hover:file:bg-sky-500/30 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
                       <input
                         type="text"
                         required
                         value={certForm.img_src}
-                        onChange={(e) => setCertForm({ ...certForm, img_src: e.target.value })}
+                        onChange={(e) => setCertForm((prev) => ({ ...prev, img_src: e.target.value }))}
                         placeholder="/images/certificates/1.png atau /uploads/..."
                         className="w-full px-3.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs font-mono"
                       />
@@ -1305,7 +1478,7 @@ export default function AdminDashboard() {
                       <input
                         type="text"
                         value={certForm.link}
-                        onChange={(e) => setCertForm({ ...certForm, link: e.target.value })}
+                        onChange={(e) => setCertForm((prev) => ({ ...prev, link: e.target.value }))}
                         placeholder="https://... atau #"
                         className="w-full px-3.5 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm font-mono"
                       />
@@ -1321,10 +1494,10 @@ export default function AdminDashboard() {
                       </button>
                       <button
                         type="submit"
-                        disabled={saving}
+                        disabled={saving || uploadingImage}
                         className="px-5 py-2 bg-sky-500 hover:bg-sky-400 text-white font-medium text-sm rounded-lg shadow-md shadow-sky-500/20 disabled:opacity-50"
                       >
-                        {saving ? 'Menyimpan...' : 'Simpan Certificate'}
+                        {saving ? 'Menyimpan...' : uploadingImage ? 'Mengunggah...' : 'Simpan Certificate'}
                       </button>
                     </div>
                   </form>
@@ -1450,6 +1623,17 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Reusable Image Crop Modal */}
+      <ImageCropModal
+        isOpen={cropModal.open}
+        onClose={() => setCropModal((prev) => ({ ...prev, open: false }))}
+        imageSrc={cropModal.imageSrc}
+        fileName={cropModal.fileName}
+        defaultAspect={cropModal.defaultAspect}
+        title={cropModal.title}
+        onCropAndUpload={cropModal.onCropAndUpload}
+      />
     </div>
   );
 }

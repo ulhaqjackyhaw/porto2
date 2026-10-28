@@ -21,6 +21,10 @@ const Project = ({ type, jsonResponse, imgSrc, title, tags, projectLink, classes
                                 <img
                                     src={imgSrc}
                                     loading="lazy"
+                                    onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.src = '/images/projects/project1.png';
+                                    }}
                                     className="img-cover w-full h-auto object-contain rounded-lg group-hover/img:scale-105 transition-transform duration-300"
                                     alt={title || "Project"}
                                 />

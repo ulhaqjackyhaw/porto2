@@ -13,6 +13,10 @@ const CertificateCard = ({ name, imgSrc, link }) => {
             src={imgSrc}
             loading="lazy"
             alt={name || "Certificate"}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/images/certificates/1.png';
+            }}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
